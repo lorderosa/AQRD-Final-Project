@@ -428,66 +428,6 @@ rm(list=setdiff(ls(), "data"))
 # Finite sample robustness: influence value (tables 3 and A3) ----
 ################################################################################
 
-# keep only observations included in model 2, it will be useful later
-m2 <- feols(
-  Mayor_promotion3y ~ Mayor_plan + gender2 + race6 +
-    Mayor_age + Mayor_c_edu + Mayor_c_central_exp +
-    Mayor_c_prov_exp + Mayor_c_county_exp + Mayor_c_soe_exp +
-    Mayor_c_univ_exp + Mayor_c_league + Mayor_connection_work |
-    Year + City_Code,
-  ~ City_Code,
-  data = filter(data, fsj2 == 0)
-)
-
-Year <- as.numeric(attr(m2$fixef_id$Year,"fixef_names")[m2$fixef_id$Year])
-City_Code <- attr(m2$fixef_id$City_Code,"fixef_names")[m2$fixef_id$City_Code]
-
-restricted_sample <- data.frame(Year, City_Code)
-
-# regress outcome on control variables excluding the treatment
-Y_resid <- feols(
-  Mayor_promotion3y ~ gender2 + race6 +
-    Mayor_age + Mayor_c_edu + Mayor_c_central_exp +
-    Mayor_c_prov_exp + Mayor_c_county_exp + Mayor_c_soe_exp +
-    Mayor_c_univ_exp + Mayor_c_league + Mayor_connection_work |
-    Year + City_Code,
-  ~ City_Code,
-  data = filter(data, fsj2 == 0)
-)$residuals
-
-# regress the treatment against the control variables
-D_resid <- feols(
-  Mayor_plan ~ gender2 + race6 +
-    Mayor_age + Mayor_c_edu + Mayor_c_central_exp +
-    Mayor_c_prov_exp + Mayor_c_county_exp + Mayor_c_soe_exp +
-    Mayor_c_univ_exp + Mayor_c_league + Mayor_connection_work |
-    Year + City_Code,
-  ~ City_Code,
-  data = filter(data, fsj2 == 0)
-)$residuals
-
-# compute influence value
-ifvals <- Y_resid*D_resid/mean(D_resid^2)
-
-# check which observation has the highest influence value
-city <- paste(restricted_sample$City_Code, restricted_sample$Year, sep = " ")
-city[which.max(ifvals)]
-
-# smallest number of observations would need to drop for the effect to no longer be statistically significant?
-temp <- data.frame(city, ifvals)
-temp <- temp[order(-ifvals),]
-
-significant <- TRUE
-drop_me <- 0
-while(significant){
-  drop_me <- drop_me + 1
-  coef <- mean(as.numeric(temp$ifvals)[drop_me:3092])
-  se <- sd(as.numeric(temp$ifvals[drop_me:3092])/sqrt(length(drop_me:3092)))
-  significant <- coef/se > 2
-}
-
-temp$city[1:drop_me] # need to drop 528 for this model to no longer be statistically significant
-
 # keep only observations included in model 3, it will be useful later
 m3 <- feols(
   Mayor_promotion3y ~ Mayor_plan + gender2 + race6 +
@@ -709,12 +649,12 @@ modelsummary(list(m3_drop, m4_drop),
 
 # show which city-year are dropped. Show also the province
 tbl_dropped <- left_join(data, m3_dropped_obs, by = c("City_Code", "Year")) 
-tbl_dropped <- left_join(tbl_dropped, m4_dropped_obs, by = c("City_Code", "Year", "city_id"))
+tbl_dropped <- left_join(tbl_dropped, m4_dropped_obs, by = c("City_Code", "Year"))
 
 tbl_dropped <- tbl_dropped |> 
-  select(Year, city_id, City_Code, pro_code, drop_m3, drop_m4, Mayor_plan, Mayor_promotion3y) |> 
-  filter(!is.na(city_id)) |>
-  select(-city_id) |> 
+  select(Year, city_id.x, city_id.y, City_Code, pro_code, drop_m3, drop_m4, Mayor_plan, Mayor_promotion3y) |> 
+  filter(!(is.na(city_id.x) & is.na(city_id.y))) |>
+  select(-c(city_id.x, city_id.y)) |> 
   mutate(drop_m3 = case_when(drop_m3 == 1 ~ "Yes",
                              TRUE ~ "No"),
          drop_m4 = case_when(drop_m4 == 1 ~ "Yes",
@@ -1284,7 +1224,7 @@ fuzzy_data <- data |>
   mutate(iv1 = ifelse(Per_pop_1 >= 0, 1, 0),
          iv1_int = iv1*Per_pop_1) 
 
-# verify whether the bandwidth is correct
+# compute bandwidth
 rdbwselect(fuzzy_data$Mayor_plan, fuzzy_data$Per_pop_1, c(0)) |> 
   summary()
 
